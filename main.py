@@ -1,15 +1,11 @@
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.key_binding.key_bindings import key_binding
 from rapidfuzz import process
 from prompt_toolkit.layout.containers import HSplit, Window
 from prompt_toolkit import Application
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.buffer import Buffer
-import sys
-from prompt_toolkit import HTML, choice, print_formatted_text, prompt
 from modules.games.bottles import get_bottle_games
-from prompt_toolkit.widgets import RadioList
 
 
 GAMES = [
@@ -36,12 +32,34 @@ def get_games():
 def get_music():
     return MUSIC
 
+kb = KeyBindings()
+
+@kb.add('c-c')
+def exit_(event):
+        event.app.exit()
+
 class SearchList:
     def __init__(self) -> None:
         self.current_flag = "g"
+        self.current_item = 0
         self.query = ""
         self.values = self.format_list(self.get_res(self.get_candidates(self.current_flag)))
         self.control = FormattedTextControl(self.get_list_text)
+
+
+        @kb.add('up')
+        def _up(event):
+            if len(self.values) and self.current_item > 0:
+                self.current_item = self.current_item - 1
+
+            else: self.current_item = len(self.values)-1
+        @kb.add('down')
+        def _down(event):
+            if len(self.values) and self.current_item < len(self.values)-1:
+                self.current_item = self.current_item + 1
+
+            else: self.current_item = 0
+
     def get_candidates(self, flag):
         if not flag:
             return []
@@ -67,17 +85,17 @@ class SearchList:
         return res
 
     def get_list_text(self):
-        return "\n".join(self.values)
+        return "\n".join(
+            (
+                "> " + value if i == self.current_item else "  " + value
+            )
+            for i, value in enumerate(self.values)
+        )
 
     def update(self, app:Application):
         self.values = self.format_list(self.get_res(self.get_candidates(self.current_flag)))
         app.invalidate()
 
-kb = KeyBindings()
-
-@kb.add('c-q')
-def exit_(event):
-        event.app.exit()
 
 def main():
     searchList = SearchList()
