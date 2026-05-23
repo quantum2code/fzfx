@@ -1,15 +1,12 @@
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.key_binding.key_bindings import key_binding
 from rapidfuzz import process
 from prompt_toolkit.layout.containers import HSplit, Window
 from prompt_toolkit import Application
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.buffer import Buffer
-import sys
-from prompt_toolkit import HTML, choice, print_formatted_text, prompt
 from modules.games.bottles import get_bottle_games
-from prompt_toolkit.widgets import RadioList
 
 
 GAMES = [
@@ -36,12 +33,53 @@ def get_games():
 def get_music():
     return MUSIC
 
+kb = KeyBindings()
+
+@kb.add('c-c')
+def exit_(event):
+        event.app.exit()
+
 class SearchList:
     def __init__(self) -> None:
-        self.current_flag = "g"
+        self.app : Application | None = None
+        self.flag = ""
+        self.current_item = 0
+        self.selected = -1
         self.query = ""
-        self.values = self.format_list(self.get_res(self.get_candidates(self.current_flag)))
+        self.input_str = ""
+        self.values = self.format_list(self.get_res(self.get_candidates(self.flag)))
         self.control = FormattedTextControl(self.get_list_text)
+
+
+        @kb.add('up')
+        def _up(event):
+            if len(self.values) and self.current_item > 0:
+                self.current_item = self.current_item - 1
+
+            else: self.current_item = len(self.values)-1
+        @kb.add('down')
+        def _down(event):
+            if len(self.values) and self.current_item < len(self.values)-1:
+                self.current_item = self.current_item + 1
+
+            else: self.current_item = 0
+
+        @kb.add('enter')
+        def _select(event):
+            self.selected = self.current_item
+
+    def parse_input(self):
+        res = self.input_str.split("/", maxsplit=1)
+        if len(res) == 2:
+            if self.flag != res[0] and self.app:
+                self.app.invalidate()
+
+            self.flag = res[0]
+            self.query = res[1]
+        else: 
+            self.flag = ""
+            self.query = res[0]
+
     def get_candidates(self, flag):
         if not flag:
             return []
@@ -67,17 +105,24 @@ class SearchList:
         return res
 
     def get_list_text(self):
-        return "\n".join(self.values)
+
+        res = FormattedText([])
+
+        for i, value in enumerate(self.values):
+            if i == self.current_item:
+                res.extend([("fg:#ff0088 bg:#474747 bold", "> "),("bg:#474747 bold", value)])
+                
+            else: 
+                res.extend([("", " "),(""," "+value)])
+            res.append(("", "\n"))
+        return res
+        
 
     def update(self, app:Application):
-        self.values = self.format_list(self.get_res(self.get_candidates(self.current_flag)))
+        self.parse_input()
+        self.values = self.format_list(self.get_res(self.get_candidates(self.flag)))
         app.invalidate()
 
-kb = KeyBindings()
-
-@kb.add('c-q')
-def exit_(event):
-        event.app.exit()
 
 def main():
     searchList = SearchList()
@@ -97,9 +142,10 @@ def main():
 
     app = Application(layout=layout, full_screen=True, key_bindings=kb, mouse_support=True)
 
+    searchList.app = app
 
     def on_input_buffer_change(buf:Buffer):
-        searchList.query = buf.text
+        searchList.input_str = buf.text
         searchList.update(app)
 
     buffer1.on_text_changed += on_input_buffer_change 
