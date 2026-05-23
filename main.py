@@ -1,4 +1,4 @@
-from re import split
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
 from rapidfuzz import process
 from prompt_toolkit.layout.containers import HSplit, Window
@@ -105,12 +105,18 @@ class SearchList:
         return res
 
     def get_list_text(self):
-        return "\n".join(
-            (
-                "> " + value if i == self.current_item else "  " + value
-            )
-            for i, value in enumerate(self.values)
-        )
+
+        res = FormattedText([])
+
+        for i, value in enumerate(self.values):
+            if i == self.current_item:
+                res.extend([("fg:#ff0088 bg:#474747 bold", "> "),("bg:#474747 bold", value)])
+                
+            else: 
+                res.extend([("", " "),(""," "+value)])
+            res.append(("", "\n"))
+        return res
+        
 
     def update(self, app:Application):
         self.parse_input()
