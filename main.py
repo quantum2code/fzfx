@@ -1,6 +1,6 @@
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
-from rapidfuzz import process
+from rapidfuzz import fuzz, process, utils
 from prompt_toolkit.layout.containers import HSplit, Window
 from prompt_toolkit import Application
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
@@ -14,6 +14,7 @@ GAMES = [
     "Half-Life",
     "Celeste",
     "Hades",
+    "The Legend of Zelda"
 ]
 
 MUSIC = [
@@ -47,7 +48,7 @@ class SearchList:
         self.selected = -1
         self.query = ""
         self.input_str = ""
-        self.values = self.format_list(self.get_res(self.get_candidates(self.flag)))
+        self.values = self.filter_list(self.get_res(self.get_candidates(self.flag)))
         self.control = FormattedTextControl(self.get_list_text)
 
 
@@ -72,6 +73,8 @@ class SearchList:
         res = self.input_str.split("/", maxsplit=1)
         if len(res) == 2:
             if self.flag != res[0] and self.app:
+                self.selected = -1
+                self.current_item = 0
                 self.app.invalidate()
 
             self.flag = res[0]
@@ -93,12 +96,15 @@ class SearchList:
         return []
 
     def get_res(self, candidates):
+        cutoff = 40
         return process.extract(
                 self.query,
                 candidates,
                 limit=20,
+                score_cutoff=cutoff,
+                processor=utils.default_process,
             )
-    def format_list(self,qlist):
+    def filter_list(self,qlist):
         res = []
         for e in qlist:
             res.append(e[0])
@@ -120,7 +126,11 @@ class SearchList:
 
     def update(self, app:Application):
         self.parse_input()
-        self.values = self.format_list(self.get_res(self.get_candidates(self.flag)))
+        #no query case, show all the entries
+        if len(self.flag) == 1 and len(self.query) < 1:
+            self.values = self.get_candidates(self.flag)
+        # query, show processed entries
+        else: self.values = self.filter_list(self.get_res(self.get_candidates(self.flag)))
         app.invalidate()
 
 
