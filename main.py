@@ -1,3 +1,4 @@
+from re import split
 from prompt_toolkit.key_binding import KeyBindings
 from rapidfuzz import process
 from prompt_toolkit.layout.containers import HSplit, Window
@@ -40,10 +41,13 @@ def exit_(event):
 
 class SearchList:
     def __init__(self) -> None:
-        self.current_flag = "g"
+        self.app : Application | None = None
+        self.flag = ""
         self.current_item = 0
+        self.selected = -1
         self.query = ""
-        self.values = self.format_list(self.get_res(self.get_candidates(self.current_flag)))
+        self.input_str = ""
+        self.values = self.format_list(self.get_res(self.get_candidates(self.flag)))
         self.control = FormattedTextControl(self.get_list_text)
 
 
@@ -59,6 +63,22 @@ class SearchList:
                 self.current_item = self.current_item + 1
 
             else: self.current_item = 0
+
+        @kb.add('enter')
+        def _select(event):
+            self.selected = self.current_item
+
+    def parse_input(self):
+        res = self.input_str.split("/", maxsplit=1)
+        if len(res) == 2:
+            if self.flag != res[0] and self.app:
+                self.app.invalidate()
+
+            self.flag = res[0]
+            self.query = res[1]
+        else: 
+            self.flag = ""
+            self.query = res[0]
 
     def get_candidates(self, flag):
         if not flag:
@@ -93,7 +113,8 @@ class SearchList:
         )
 
     def update(self, app:Application):
-        self.values = self.format_list(self.get_res(self.get_candidates(self.current_flag)))
+        self.parse_input()
+        self.values = self.format_list(self.get_res(self.get_candidates(self.flag)))
         app.invalidate()
 
 
@@ -115,9 +136,10 @@ def main():
 
     app = Application(layout=layout, full_screen=True, key_bindings=kb, mouse_support=True)
 
+    searchList.app = app
 
     def on_input_buffer_change(buf:Buffer):
-        searchList.query = buf.text
+        searchList.input_str = buf.text
         searchList.update(app)
 
     buffer1.on_text_changed += on_input_buffer_change 
