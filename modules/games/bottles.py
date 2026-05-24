@@ -1,10 +1,15 @@
-from __future__ import annotations
-
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+@dataclass(frozen=True)
+class GameItem:
+    key: str
+    label: str
+    source: str
+    meta: dict[str, Any]
 
 def _find_bottle_files(base_dir: Path | None = None) -> list[Path]:
     root = base_dir or (Path.home() / ".local")
@@ -23,6 +28,9 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _extract_bottle_name(data: dict[str, Any]) -> str:
+    name = data.get("Name", "")
+    return name if isinstance(name, str) else ""
 def _extract_external_program_names(data: dict[str, Any]) -> list[str]:
     external_programs = data.get("External_Programs", {})
     if not isinstance(external_programs, dict):
@@ -40,15 +48,22 @@ def _extract_external_program_names(data: dict[str, Any]) -> list[str]:
     return names
 
 
-def get_bottle_games() -> list[str]:
-    programs: list[str] = []
+def get_bottle_games() -> dict[str, GameItem]:
+    programs: dict[str, GameItem] = {}
     seen: set[str] = set()
 
     for bottle_file in _find_bottle_files():
         data = _load_yaml(bottle_file)
+        bottle_name = _extract_bottle_name(data)
         for name in _extract_external_program_names(data):
             if name not in seen:
                 seen.add(name)
-                programs.append(name)
+                key = f"bottles:{bottle_name}:{name}"
+                programs[key] = GameItem(
+                    key=key,
+                    label=name,
+                    source="bottles",
+                    meta={"bottle": bottle_name, "prog": name},
+                )
 
     return programs
