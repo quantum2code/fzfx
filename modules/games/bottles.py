@@ -1,15 +1,26 @@
-from dataclasses import dataclass
 from pathlib import Path
+import subprocess
 from typing import Any
-
 import yaml
+from modules.core import Module, SearchItem
 
-@dataclass(frozen=True)
-class GameItem:
-    key: str
-    label: str
-    source: str
-    meta: dict[str, Any]
+         
+class BottlesModule(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def get_list(self) -> list[SearchItem]:
+        return get_bottle_games()
+ 
+    def take_action(self, item: SearchItem):
+        subprocess.run([
+            "bottles-cli",
+            "run",
+            "-b",
+            item.meta["bottle"],
+            "-p",
+            item.meta["prog"],
+        ])
 
 def _find_bottle_files(base_dir: Path | None = None) -> list[Path]:
     root = base_dir or (Path.home() / ".local")
@@ -48,8 +59,8 @@ def _extract_external_program_names(data: dict[str, Any]) -> list[str]:
     return names
 
 
-def get_bottle_games() -> dict[str, GameItem]:
-    programs: dict[str, GameItem] = {}
+def get_bottle_games() -> list[SearchItem]:
+    programs: list[SearchItem] = []
     seen: set[str] = set()
 
     for bottle_file in _find_bottle_files():
@@ -58,12 +69,11 @@ def get_bottle_games() -> dict[str, GameItem]:
         for name in _extract_external_program_names(data):
             if name not in seen:
                 seen.add(name)
-                key = f"bottles:{bottle_name}:{name}"
-                programs[key] = GameItem(
-                    key=key,
+                programs.append(SearchItem(
+                    key=f"bottles:{bottle_name}:{name}",
+                    type="game",
                     label=name,
-                    source="bottles",
-                    meta={"bottle": bottle_name, "prog": name},
-                )
+                    meta={"bottle": bottle_name, "source": "bottles", "prog": name},
+                ))
 
     return programs
