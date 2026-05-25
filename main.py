@@ -1,3 +1,4 @@
+from asyncio.coroutines import iscoroutine
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
 from rapidfuzz import process, utils
@@ -29,9 +30,10 @@ class SearchList:
         self.modules : dict[str, Module] = {"games": GameModule(), "music": MusicModule()}
         self.update_task: asyncio.Task | None = None
         self.flag = ""
-        self.current_item = 0
+        self.current_item = -1
         self.selected = -1
         self.query = ""
+        self.filter_query = ""
         self.input_str = ""
         self.values: list[SearchItem] =  []       
         self.control = FormattedTextControl(self.format_values)
@@ -39,16 +41,21 @@ class SearchList:
 
         @kb.add('up')
         def _up(event):
-            if len(self.values) and self.current_item > 0:
-                self.current_item = self.current_item - 1
+            if len(self.values): 
+                if self.current_item > 0:
+                    self.current_item -= 1
 
-            else: self.current_item = len(self.values)-1
+                else: self.current_item = len(self.values)-1
+            else: self.current_item = -1
         @kb.add('down')
         def _down(event):
-            if len(self.values) and self.current_item < len(self.values)-1:
-                self.current_item = self.current_item + 1
+            if len(self.values):
+                if self.current_item < len(self.values)-1:
+                    self.current_item = self.current_item + 1
 
-            else: self.current_item = 0
+                else: self.current_item = 0
+
+            else: self.current_item = -1
 
         @kb.add('enter')
         def _select(event):
@@ -65,12 +72,18 @@ class SearchList:
                 if asyncio.iscoroutine(action):
                     asyncio.create_task(action)
 
+        @kb.add('tab')
+        def _search(event):
+            if self.flag == "m":
+                action = self._handle_search_result()
+                if asyncio.iscoroutine(action):
+                    asyncio.create_task(action)
+
     async def parse_input(self):
         res = self.input_str.split("/", maxsplit=1)
         if len(res) == 2:
             if self.flag != res[0] and self.app:
-                self.selected = -1
-                self.current_item = 0
+                self._reset_params()
                 if res[0] == "m":
                     m = self.modules["music"]
                     await m.init()
@@ -78,9 +91,11 @@ class SearchList:
 
             self.flag = res[0]
             self.query = res[1]
+            self.filter_query = ""
         else: 
             self.flag = ""
             self.query = res[0]
+            self.filter_query = ""
 
     async def get_candidates(self, flag) -> list[SearchItem]:
         if not flag:
@@ -92,17 +107,17 @@ class SearchList:
 
         if flag == "m":
             musicModule = self.modules["music"]
-            res = await musicModule.get_list()
+            res = await musicModule.get_suggestions(self.query)
             return res
         return []
 
-    def get_res(self, candidates: list[SearchItem]) -> list[SearchItem]:
+    def get_res(self, candidates: list[SearchItem], query:str) -> list[SearchItem]:
         cutoff = 40
         if not candidates:
             return []
 
         res = process.extract(
-            self.query,
+            query,
             candidates,
             limit=20,
             score_cutoff=cutoff,
@@ -123,6 +138,24 @@ class SearchList:
             res.append(("", "\n"))
         return res
         
+    def _reset_params(self):
+        if len(self.values)>0:
+            self.current_item = 0
+        else: self.current_item = -1
+        self.selected = -1
+
+    async def _handle_search_result(self):
+        m = self.modules["music"]
+        res :list[SearchItem] = await m.get_search_results(self.query)
+
+        for e in res:
+            if e not in self.values:
+                self.values.append(e)
+
+        self._reset_params()
+
+        if self.app:
+            self.app.invalidate()
 
     async def update(self, app:Application):
         try:
@@ -132,17 +165,20 @@ class SearchList:
                     #no query case, show all the entries
                     if len(self.flag) == 1 and len(self.query) < 1:
                         self.values = await self.get_candidates(self.flag)
+                        self._reset_params()
                     # query, show processed entries
                     else: 
                         candidates = await self.get_candidates(self.flag)
-                        self.values = self.get_res(candidates)
+                        self.values = self.get_res(candidates, self.query)
+                        self._reset_params()
                 case "m":
-                    musicModule = self.modules["music"]
-                    await musicModule.write_to_search(self.query)
-                    await asyncio.sleep(0.35)
+                    debounce = 0.3
+                    await asyncio.sleep(debounce)
                     candidates = await self.get_candidates(self.flag)
                     self.values = candidates
+                    self._reset_params()
             app.invalidate()
+
         except asyncio.CancelledError:
             return
 
