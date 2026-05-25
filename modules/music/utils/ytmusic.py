@@ -1,10 +1,7 @@
 import websockets
 import json
-import logging
 
 from modules.core import SearchItem
-
-logger = logging.getLogger("fzfx.music")
 
 
 async def _send_cdp( ws, payload: dict):
@@ -128,7 +125,6 @@ async def get_suggestions_api(wsurl, query):
           return []
 
 async def _search_songs_api(wsurl, query):
-    logger.debug("search api start query=%r", query)
     jsexpr = f'''
         (async () => {{
           const ctx = ytcfg.get('INNERTUBE_CONTEXT');
@@ -196,10 +192,8 @@ async def _search_songs_api(wsurl, query):
           if isinstance(value, str) and value.strip():
               try:
                   parsed = json.loads(value)
-                  logger.debug("search api returned parsed count=%s", len(parsed) if isinstance(parsed, list) else None)
                   return parsed if isinstance(parsed, list) else []
               except json.JSONDecodeError:
-                  logger.exception("search api json decode failed")
                   return []
           return []
 

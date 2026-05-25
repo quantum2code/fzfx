@@ -1,12 +1,10 @@
 import asyncio
-import logging
 from modules.core import Module, SearchItem
-from modules.music.utils.ytmusic import get_suggestions_api, get_suggestions_dom, _search_songs_api, toSearchItem, write_to_search_dom, _send_cdp
+from modules.music.utils.ytmusic import get_suggestions_api, _search_songs_api, toSearchItem, write_to_search_dom, _send_cdp
 import websockets
 import subprocess
 import httpx
 
-logger = logging.getLogger("fzfx.music")
 
 PORT=9222
 yt_url="https://music.youtube.com"
@@ -16,26 +14,36 @@ class YtMusicModule(Module):
         super().__init__()
         self.chromewsURL: str = ""
 
+    async def _try_ws_connect(self, wsurl):
+        try:
+            async with websockets.connect(wsurl) as ws:
+                await ws.send('{"id":1,"method":"Browser.getVersion"}')
+                await ws.recv()
+                return True
+        except:
+            return False
+
     async def _try_get_wsurl(self):
+        if self.chromewsURL and await self._try_ws_connect(self.chromewsURL):
+            return self.chromewsURL
         try:
             res = httpx.get(f'http://localhost:{PORT}/json/list')
             if res.status_code == 200:
                 resjson = res.json()
                 wsurl = ""
                 for i in list(resjson):
-                    if i["title"] and yt_url in i["url"]:
+                    if i["title"] and i["url"].startswith(yt_url):
                         wsurl = i["webSocketDebuggerUrl"]
                         break
-                if wsurl:
-                    try:
-                        async with websockets.connect(wsurl) as ws:
-                            await ws.send('{"id":1,"method":"Browser.getVersion"}')
-                            await ws.recv()
-                            self.chromewsURL = wsurl
-                            return wsurl
-                    except:
-                        return ""
+                if wsurl and await self._try_ws_connect(wsurl):
+                        self.chromewsURL = wsurl
+                        return wsurl
+                else: 
+                    self.chromewsURL = ""
+                    return ""
+
         except (httpx.RequestError, OSError, websockets.WebSocketException):
+            self.chromewsURL = ""
             return ""
 
     async def _get_chrome_wsURL(self):
@@ -97,12 +105,10 @@ class YtMusicModule(Module):
     async def take_action(self, item: SearchItem) -> list[SearchItem] | None:
         url = item.meta.get("url")
         if (not isinstance(url, str) or not url):
-            logger.debug("take_action invalid meta")
             return None
 
         wsurl = await self._try_get_wsurl()
         if not wsurl:
-            logger.debug("take_action no wsurl")
             return None
 
         if "autoplay=" not in url:
@@ -110,7 +116,6 @@ class YtMusicModule(Module):
 
 
         async with websockets.connect(wsurl) as ws:
-            logger.debug("take_action navigating song url=%s", url)
             await _send_cdp(ws, {
                 "id": 3,
                 "method": "Page.navigate",

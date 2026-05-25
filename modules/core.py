@@ -1,14 +1,5 @@
 from dataclasses import dataclass
 from typing import Any
-import logging
-
-logging.basicConfig(
-    filename="fzfx-debug.log",
-    filemode="a",
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
-
 
 @dataclass(frozen=True)
 class SearchItem:
