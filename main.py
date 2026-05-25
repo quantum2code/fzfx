@@ -1,21 +1,67 @@
+import subprocess
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
-from rapidfuzz import fuzz, process, utils
+from rapidfuzz import process, utils
 from prompt_toolkit.layout.containers import HSplit, Window
 from prompt_toolkit import Application
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.buffer import Buffer
-from modules.games.bottles import get_bottle_games
+from modules.games.bottles import GameItem, get_bottle_games
 
 
-GAMES = [
-    "Portal",
-    "Half-Life",
-    "Celeste",
-    "Hades",
-    "The Legend of Zelda"
-]
+def _game_item_processor(value: str | GameItem) -> str:
+    if isinstance(value, GameItem):
+        return value.label
+
+    return utils.default_process(value) or ""
+
+class Module:
+    def __init__(self) -> None:
+        pass
+
+    def get_list(self) -> dict[str, GameItem]:
+        return {}
+
+    def take_action(self, item: GameItem):
+        pass
+
+class GameModule(Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.modules: dict[str, Module] = {"bottles":BottlesModule()}
+        self.data: dict[str, GameItem] = {}
+
+    def get_list(self) -> dict[str, GameItem]:
+        if len(self.data) > 1:
+            return self.data
+        else:
+            for m in self.modules.values():
+                res = m.get_list()
+                self.data.update(res)
+            return self.data
+
+    def take_action(self, item: GameItem):
+        module = self.modules.get(item.source)
+        if module:
+            module.take_action(item)
+         
+class BottlesModule(Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def get_list(self) -> dict[str, GameItem]:
+        return get_bottle_games()
+ 
+    def take_action(self, item: GameItem):
+        subprocess.run([
+            "bottles-cli",
+            "run",
+            "-b",
+            item.meta["bottle"],
+            "-p",
+            item.meta["prog"],
+        ])
 
 MUSIC = [
     "Numb",
@@ -24,15 +70,16 @@ MUSIC = [
 ]
 
 
-def get_games():
-    if len(GAMES) > 5:
-        return GAMES
-    GAMES.extend(get_bottle_games())
-    return GAMES
-
-
-def get_music():
-    return MUSIC
+def get_music() -> dict[str, GameItem]:
+    return {
+        f"music:{name}": GameItem(
+            key=f"music:{name}",
+            label=name,
+            source="music",
+            meta={},
+        )
+        for name in MUSIC
+    }
 
 kb = KeyBindings()
 
@@ -43,12 +90,13 @@ def exit_(event):
 class SearchList:
     def __init__(self) -> None:
         self.app : Application | None = None
+        self.modules : dict[str, Module] = {"games": GameModule()}
         self.flag = ""
         self.current_item = 0
         self.selected = -1
         self.query = ""
         self.input_str = ""
-        self.values = self.filter_list(self.get_res(self.get_candidates(self.flag)))
+        self.values: list[GameItem] = self.get_res(self.get_candidates(self.flag))
         self.control = FormattedTextControl(self.get_list_text)
 
 
@@ -68,6 +116,8 @@ class SearchList:
         @kb.add('enter')
         def _select(event):
             self.selected = self.current_item
+            if len(self.values) and 0 <= self.current_item < len(self.values):
+                self.modules["games"].take_action(self.values[self.current_item])
 
     def parse_input(self):
         res = self.input_str.split("/", maxsplit=1)
@@ -83,32 +133,32 @@ class SearchList:
             self.flag = ""
             self.query = res[0]
 
-    def get_candidates(self, flag):
+    def get_candidates(self, flag) -> dict[str, GameItem]:
         if not flag:
-            return []
+            return {}
 
         if flag == "g":
-            return get_games()
+            gameModule = self.modules["games"]
+            return gameModule.get_list()
 
         if flag == "m":
             return get_music()
 
-        return []
+        return {}
 
-    def get_res(self, candidates):
+    def get_res(self, candidates: dict[str, GameItem]) -> list[GameItem]:
         cutoff = 40
-        return process.extract(
-                self.query,
-                candidates,
-                limit=20,
-                score_cutoff=cutoff,
-                processor=utils.default_process,
-            )
-    def filter_list(self,qlist):
-        res = []
-        for e in qlist:
-            res.append(e[0])
-        return res
+        if not candidates:
+            return []
+
+        res = process.extract(
+            self.query,
+            list(candidates.values()),
+            limit=20,
+            score_cutoff=cutoff,
+            processor=_game_item_processor
+        )
+        return [e[0] for e in res]
 
     def get_list_text(self):
 
@@ -116,10 +166,10 @@ class SearchList:
 
         for i, value in enumerate(self.values):
             if i == self.current_item:
-                res.extend([("fg:#ff0088 bg:#474747 bold", "> "),("bg:#474747 bold", value)])
+                res.extend([("fg:#ff0088 bg:#474747 bold", "> "),("bg:#474747 bold", value.label)])
                 
             else: 
-                res.extend([("", " "),(""," "+value)])
+                res.extend([("", " "),("", " "+value.label)])
             res.append(("", "\n"))
         return res
         
@@ -128,9 +178,9 @@ class SearchList:
         self.parse_input()
         #no query case, show all the entries
         if len(self.flag) == 1 and len(self.query) < 1:
-            self.values = self.get_candidates(self.flag)
+            self.values = list(self.get_candidates(self.flag).values())
         # query, show processed entries
-        else: self.values = self.filter_list(self.get_res(self.get_candidates(self.flag)))
+        else: self.values = self.get_res(self.get_candidates(self.flag))
         app.invalidate()
 
 
